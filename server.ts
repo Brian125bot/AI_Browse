@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import * as cheerio from "cheerio";
 import dotenv from "dotenv";
@@ -1868,11 +1870,19 @@ async function startServer() {
     if (process.env.NODE_ENV !== "production") {
       try {
         const vite = await createViteServer({
+          // Skip vite.config.ts entirely — its server.hmr block would override
+          // our setting below and cause Vite to try binding port 24678 again.
+          configFile: false,
+          plugins: [react(), tailwindcss()],
+          resolve: {
+            alias: { "@": path.join(process.cwd(), ".") },
+          },
           server: {
             middlewareMode: true,
-            // Disable Vite's own HMR WebSocket server — Express owns the port.
-            // This prevents the "Port 24678 is already in use" crash on restart.
-            hmr: { port: 0 },
+            // Disable Vite's standalone HMR WebSocket server.
+            // Express already owns the port; Vite must not try to bind 24678.
+            hmr: false,
+            watch: {},
           },
           appType: "spa",
         });
