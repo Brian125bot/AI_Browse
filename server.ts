@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import * as cheerio from "cheerio";
 import dotenv from "dotenv";
@@ -19,7 +21,7 @@ if (process.env.UPSTREAM_HTTP_PROXY) {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 app.use(express.json());
 
@@ -181,7 +183,7 @@ export function generateGoogleHomepage(): string {
           <div class="relative group flex items-center bg-[#202124] hover:bg-[#303134] focus-within:bg-[#303134] border border-[#5f6368] hover:border-transparent rounded-[24px] h-[46px] px-4 transition-all shadow-md focus-within:shadow-lg">
             <span class="text-slate-400 mr-3 text-sm">🔍</span>
             <input id="search-input-box" class="flex-1 bg-transparent border-none text-[#e8eaed] outline-none text-[16px] placeholder-slate-500" type="text" placeholder="Search Google..." autocomplete="off" autofocus />
-            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙️</span>
+            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙����</span>
             <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-1" title="Search by image">📷</span>
           </div>
 
@@ -1864,24 +1866,82 @@ app.post("/api/cache/clear", async (req, res) => {
 
 // Vite & Static file mapping
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+  try {
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const vite = await createViteServer({
+          // Skip vite.config.ts entirely — its server.hmr block would override
+          // our setting below and cause Vite to try binding port 24678 again.
+          configFile: false,
+          plugins: [react(), tailwindcss()],
+          resolve: {
+            alias: { "@": path.join(process.cwd(), ".") },
+          },
+          server: {
+            middlewareMode: true,
+            // Disable Vite's standalone HMR WebSocket server.
+            // Express already owns the port; Vite must not try to bind 24678.
+            hmr: false,
+            watch: {},
+          },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } catch (viteError) {
+        console.warn("Vite initialization failed, using static fallback:", viteError);
+        const distPath = path.join(process.cwd(), "dist");
+        app.use(express.static(distPath));
+        app.get("*", (_req, res) => {
+          res.sendFile(path.join(distPath, "index.html"), (err) => {
+            if (err) res.status(500).send("Server error - Vite and dist unavailable");
+          });
+        });
+      }
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
 
-  const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
-  app.listen(PORT, HOST, () => {
-    console.log(`Server running on http://${HOST}:${PORT}`);
+    const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
+
+    await listenOnAvailablePort(app, PORT, HOST);
+  } catch (err) {
+    console.error("Fatal error during server initialization:", err);
+    process.exit(1);
+  }
+}
+
+function listenOnAvailablePort(
+  expressApp: express.Application,
+  port: number,
+  host: string,
+  attempt = 0
+): Promise<void> {
+  const MAX_ATTEMPTS = 10;
+  return new Promise<void>((resolve, reject) => {
+    const server = expressApp.listen(port, host, () => {
+      console.log(`Server running on http://${host}:${port}`);
+      resolve();
+    });
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE" && attempt < MAX_ATTEMPTS) {
+        const nextPort = port + 1;
+        console.warn(`Port ${port} in use, trying ${nextPort}...`);
+        server.close();
+        listenOnAvailablePort(expressApp, nextPort, host, attempt + 1)
+          .then(resolve)
+          .catch(reject);
+      } else {
+        reject(err);
+      }
+    });
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
