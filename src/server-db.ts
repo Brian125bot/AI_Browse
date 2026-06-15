@@ -21,7 +21,7 @@ class SimpleDB {
   private writePromise: Promise<void> = Promise.resolve();
 
   // Configuration
-  private isEphemeral = process.env.EPHEMERAL_MODE === "true";
+  private isEphemeral = process.env.EPHEMERAL_MODE === "true" || process.env.NODE_ENV === "production";
   private maxEntriesPerType = 50;
   private cacheTtlMs = 24 * 60 * 60 * 1000; // 24 hours
 

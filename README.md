@@ -73,9 +73,14 @@ This application circumvents blocks entirely via a customized **Google Emulation
 A key design pillar which tracks, parses, and persists remote data. By leveraging local server file systems:
 *   Reduces standard network request latencies from several seconds down to **less than 10ms** on repeated requests.
 *   **Automatic Eviction Guardrails:** Keeps storage load highly optimized. A recurring prune function removes entries older than 24 hours (TTL decay) and limits maximum database cache logs to 50 items per endpoint type (Eldest-First eviction).
-*   **Ephemeral Memory-Only Mode:** Environment variables can switch `EPHEMERAL_MODE` to `true` to restrict database updates to live, volatile execution states, bypassing persistent flat-file writing entirely.
+*   **Serverless Native Ephemeral Mode:** When deployed to Google Cloud Run or Vercel (`NODE_ENV=production`), the application automatically activates `EPHEMERAL_MODE: true`. This shifts all caching purely into memory and stops disk writes to preserve container memory allocations and prevent persistent I/O bottlenecks in horizontal scaling environments.
 *   Provides full CRUD capability on cached entities. The client's **Cache DB** panel displays total file size indices, exact creation timestamps, and raw document categories.
 *   Allows force-bypass controls `?reload=true` for live updates.
+
+### 4. Cloud Run & Serverless Deployment Optimizations
+*   **Disabled File I/O (Ephemeral DB):** Automatically bound memory-only execution upon detecting `NODE_ENV=production`. Stops memory-bloat linked to Cloud Run's in-memory layered file system.
+*   **Stateless Scaling:** Local node environment relies on in-memory variables to manage `domainCookies`. If scaling to multiple instances on Cloud Run, users should enable **Session Affinity (Sticky Sessions)** to route specific clients to the same container instances to maintain their authenticated cookie states inside the proxies.
+*   **Single-Bundle Deployments:** The backend fully compiles via `esbuild` down to a standalone `dist/server.cjs` script containing all dependencies, reducing cold-start times significantly on serverless containers.
 
 ---
 
