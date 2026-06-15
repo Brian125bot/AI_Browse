@@ -181,7 +181,7 @@ export function generateGoogleHomepage(): string {
           <div class="relative group flex items-center bg-[#202124] hover:bg-[#303134] focus-within:bg-[#303134] border border-[#5f6368] hover:border-transparent rounded-[24px] h-[46px] px-4 transition-all shadow-md focus-within:shadow-lg">
             <span class="text-slate-400 mr-3 text-sm">🔍</span>
             <input id="search-input-box" class="flex-1 bg-transparent border-none text-[#e8eaed] outline-none text-[16px] placeholder-slate-500" type="text" placeholder="Search Google..." autocomplete="off" autofocus />
-            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙️</span>
+            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙��</span>
             <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-1" title="Search by image">📷</span>
           </div>
 
@@ -1864,24 +1864,44 @@ app.post("/api/cache/clear", async (req, res) => {
 
 // Vite & Static file mapping
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+  try {
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } catch (viteError) {
+        console.warn("Vite initialization failed, using static fallback:", viteError);
+        // Fallback to serving from dist if Vite fails
+        const distPath = path.join(process.cwd(), "dist");
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+          res.sendFile(path.join(distPath, "index.html")).catch(() => {
+            res.status(500).send("Server error - Vite and dist unavailable");
+          });
+        });
+      }
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
 
-  const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
-  app.listen(PORT, HOST, () => {
-    console.log(`Server running on http://${HOST}:${PORT}`);
-  });
+    const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
+    app.listen(PORT, HOST, () => {
+      console.log(`Server running on http://${HOST}:${PORT}`);
+    });
+  } catch (err) {
+    console.error("Fatal error during server initialization:", err);
+    process.exit(1);
+  }
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
