@@ -181,7 +181,7 @@ export function generateGoogleHomepage(): string {
           <div class="relative group flex items-center bg-[#202124] hover:bg-[#303134] focus-within:bg-[#303134] border border-[#5f6368] hover:border-transparent rounded-[24px] h-[46px] px-4 transition-all shadow-md focus-within:shadow-lg">
             <span class="text-slate-400 mr-3 text-sm">🔍</span>
             <input id="search-input-box" class="flex-1 bg-transparent border-none text-[#e8eaed] outline-none text-[16px] placeholder-slate-500" type="text" placeholder="Search Google..." autocomplete="off" autofocus />
-            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙��</span>
+            <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-2" title="Search by voice">🎙���</span>
             <span class="text-slate-400 cursor-pointer hover:text-slate-200 text-xs font-bold leading-none px-1" title="Search by image">📷</span>
           </div>
 
@@ -1892,8 +1892,24 @@ async function startServer() {
     }
 
     const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
-    app.listen(PORT, HOST, () => {
+    const server = app.listen(PORT, HOST, () => {
       console.log(`Server running on http://${HOST}:${PORT}`);
+    });
+
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
+        const retryServer = app.listen(PORT + 1, HOST, () => {
+          console.log(`Server running on http://${HOST}:${PORT + 1}`);
+        });
+        retryServer.on("error", (retryErr) => {
+          console.error("Failed to find an available port:", retryErr);
+          process.exit(1);
+        });
+      } else {
+        console.error("Server error:", err);
+        process.exit(1);
+      }
     });
   } catch (err) {
     console.error("Fatal error during server initialization:", err);
