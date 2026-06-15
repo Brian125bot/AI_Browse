@@ -1041,7 +1041,7 @@ app.get("/api/proxy", async (req, res) => {
         "Sec-Fetch-Mode": "navigate"
       },
       signal: AbortSignal.timeout(10000) // 10s timeout
-    });
+    } as any);
 
     if (!response.ok) {
       throw new Error(`Target server responded with status ${response.status}`);
@@ -1494,7 +1494,7 @@ app.post("/api/analyze", async (req, res) => {
         "Cookie": domainCookies.get(new URL(targetUrl).hostname) || ""
       },
       signal: AbortSignal.timeout(8000)
-    });
+    } as any);
     
     const setCookies = fetchRes.headers.get("set-cookie");
     if (setCookies) {

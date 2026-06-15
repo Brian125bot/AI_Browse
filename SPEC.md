@@ -9,33 +9,41 @@ This specification outlines the roadmap for upgrading the tool from a basic prot
 
 ## 2. Core Upgrades & Feature Specifications
 
-### 2.1. Feature: Advanced Stealth Proxy Engine (Privacy & Bypassing)
+### 2.1. Feature: Advanced Stealth Proxy Engine (Privacy & Bypassing) - ✅ PARTIALLY IMPLEMENTED
 **The "What":**
 Currently, basic server-side `fetch` can be easily blocked by CDNs (Cloudflare, Akamai) or bot-protection scripts. We need a stealthier approach to ensure reliable page retrieval.
 
-**The "How" (Implementation):**
-*   **Dynamic Headless Browsing:** Integrate `puppeteer-core` with `puppeteer-extra-plugin-stealth` (or Playwright) alongside the standard Cheerio parser. 
-*   **Header Rotation:** Maintain a pool of modern, randomized `User-Agent`, `Sec-CH-UA`, and `Accept-Language` headers.
-*   **Cookie Jars:** Implement ephemeral cookie sessions per request to handle sites that require minimum cookie handshakes to render.
+**The "How" (Implementation Status):**
+*   **Header Rotation:** Maintain a pool of modern, randomized `User-Agent`, `Sec-CH-UA`, and `Accept-Language` headers. (Implemented)
+*   **Cookie Jars:** Implement ephemeral cookie sessions per request to handle sites that require minimum cookie handshakes to render. (**Implemented:** Resolved as active, host-specific session cookie registries in memory, maintaining user state dynamically across pages and analyze nodes).
+*   **Full Resource Tunneling:** Enforce full gateway routing of all sub-resource CSS, JavaScript, and illustrative source vectors strictly via `/api/proxy` to bypass context security policies. (Implemented)
+*   **Upstream Gateways:** Supports routing crawler requests over defined HTTP Proxies (via `undici`'s `ProxyAgent` setting `UPSTREAM_HTTP_PROXY`). (Implemented)
+*   **SSRF Protection Blocklist:** Actively audits requested URLs, blocking access requests directed at local address spaces or home networks. (Implemented)
+*   **Dynamic Headless Browsing:** Integrate `puppeteer-core` with `puppeteer-extra-plugin-stealth` (or Playwright) alongside the standard Cheerio parser. (Planned)
 
 **Definition of Done (Completion):**
 *   The proxy successfully fetches heavily protected sites (e.g., Reddit, Twitter, Cloudflare-protected news sites) without returning 403 Forbidden or CAPTCHA blocks.
+*   Stateful authentication handshakes and security loop mitigations are active on target crawl endpoints.
 
 ### 2.2. Feature: Robust Local Storage Database (SQLite)
 **The "What":**
 Transition from the flat-file `cache-db.json` to a proper local database to handle scaling, faster lookups, and complex queries (like history searching or tab restoration).
 
-**The "How" (Implementation):**
-*   **Library:** Introduce `better-sqlite3` for synchronous, blazing-fast local disk I/O.
-*   **Schema:** 
+**The "How" (Implementation Status):**
+*   **Library:** Introduce `better-sqlite3` for synchronous, blazing-fast local disk I/O. (Planned)
+*   **Current State - Hardened JSON DB Cache:** Prior to database engine swap, the existing JSON flat manager `/src/server-db.ts` was fully upgraded with **automatic pruning limits**:
+    *   **TTL Eviction:** Clears items older than 24 Hours. (Implemented)
+    *   **Capacity Eviction:** Restricts logs to 50 active items per endpoint segment, pruning eldest logs first. (Implemented)
+    *   **Memory-Only Mode:** Implements an switchable environment setting `EPHEMERAL_MODE=true` to process entries entirely in-ram without persisting writes to disk. (Implemented)
+*   **Schema (Proposed):** 
     *   `pages` table: `id`, `url`, `raw_html`, `snapshot_date`.
     *   `ai_analyses` table: `id`, `page_id`, `gemini_markdown_output`, `extracted_metadata`.
     *   `history` table: `id`, `url`, `title`, `visited_at`.
-*   **Pruning:** Add an auto-pruning utility to keep the local database under a specific size limit (e.g., 500MB).
+*   **Pruning:** Add an auto-pruning utility to keep the database under a specific threshold. (Pruning cap & TTL implemented on the caches)
 
 **Definition of Done (Completion):**
 *   Read/write operations for cached pages take < 5ms.
-*   The user can instantly search their browsing history and load cached pages without triggering a new network request.
+*   The flat cache cleanly handles item limits and temporal evictions silently in the background.
 
 ### 2.3. Feature: AI Engine Optimization (Gemini Processing)
 **The "What":**
