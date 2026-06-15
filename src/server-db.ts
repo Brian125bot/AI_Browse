@@ -20,31 +20,62 @@ class SimpleDB {
   private initialized = false;
   private writePromise: Promise<void> = Promise.resolve();
 
+  // Configuration
+  private isEphemeral = process.env.EPHEMERAL_MODE === "true";
+  private maxEntriesPerType = 50;
+  private cacheTtlMs = 24 * 60 * 60 * 1000; // 24 hours
+
   async init() {
     if (this.initialized) return;
+    if (this.isEphemeral) {
+      this.initialized = true;
+      return;
+    }
     try {
       const exists = await fs.access(DB_FILE).then(() => true).catch(() => false);
       if (exists) {
         const raw = await fs.readFile(DB_FILE, "utf-8");
         this.data = JSON.parse(raw);
-        // Ensure structure is safe
         if (!this.data.proxy) this.data.proxy = {};
         if (!this.data.analyze) this.data.analyze = {};
         if (!this.data.aiEmu) this.data.aiEmu = {};
+        this.enforceLimits();
       } else {
         await this.save();
       }
     } catch (err) {
-      console.warn("Failed to read database cache file, initializing blank schema:", err);
+      console.warn("Failed to read database cache file:", err);
       this.data = { proxy: {}, analyze: {}, aiEmu: {} };
-      try {
-        await this.save();
-      } catch (e) {}
     }
     this.initialized = true;
   }
 
+  private enforceLimits() {
+    const now = Date.now();
+    const prune = (record: Record<string, CacheEntry<any>>) => {
+      const entries = Object.values(record);
+      // Evict expired
+      entries.forEach(e => {
+        if (now - e.createdAt > this.cacheTtlMs) {
+          delete record[e.key];
+        }
+      });
+      // Evict over cap (eldest first)
+      const remaining = Object.values(record).sort((a, b) => b.createdAt - a.createdAt);
+      if (remaining.length > this.maxEntriesPerType) {
+        const toRemove = remaining.slice(this.maxEntriesPerType);
+        toRemove.forEach(e => delete record[e.key]);
+      }
+    };
+
+    prune(this.data.proxy);
+    prune(this.data.analyze);
+    prune(this.data.aiEmu);
+  }
+
   private async save() {
+    if (this.isEphemeral) return;
+    this.enforceLimits();
     this.writePromise = this.writePromise.then(async () => {
       try {
         await fs.writeFile(DB_FILE, JSON.stringify(this.data, null, 2), "utf-8");

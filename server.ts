@@ -8,6 +8,16 @@ import { cacheDb } from "./src/server-db";
 
 dotenv.config();
 
+let fetchDispatcher: any = undefined;
+if (process.env.UPSTREAM_HTTP_PROXY) {
+  import("undici").then(({ ProxyAgent }) => {
+    fetchDispatcher = new ProxyAgent(process.env.UPSTREAM_HTTP_PROXY as string);
+    console.log(`Using upstream HTTP proxy: ${process.env.UPSTREAM_HTTP_PROXY}`);
+  }).catch(err => {
+    console.warn("Could not load undici for upstream proxying.", err);
+  });
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -921,6 +931,14 @@ async function generateGoogleSearchResultsPage(model: string, query: string): Pr
   `;
 }
 
+// Persistent in-memory session cookie jar per hostname
+const domainCookies = new Map<string, string>();
+
+// SSRF blocklist regex
+const isLocalNetwork = (host: string) => {
+  return /^(localhost|127\.\d+\.\d+\.\d+|::1|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+|fc00::|fd00::)/.test(host);
+};
+
 // 1. Fetch & Proxy Web Page
 app.get("/api/proxy", async (req, res) => {
   const urlParam = req.query.url as string;
@@ -992,6 +1010,17 @@ app.get("/api/proxy", async (req, res) => {
     targetUrl = "http://" + targetUrl;
   }
 
+  let requestUrl;
+  try {
+    requestUrl = new URL(targetUrl);
+    if (isLocalNetwork(requestUrl.hostname)) {
+      return res.status(403).send("Forbidden local network access.");
+    }
+  } catch {
+    return res.status(400).send("Invalid target URL provided.");
+  }
+  const hostname = requestUrl.hostname;
+
   if (!bypassCache) {
     const cachedHtml = await cacheDb.getProxy(targetUrl);
     if (cachedHtml) {
@@ -1003,17 +1032,31 @@ app.get("/api/proxy", async (req, res) => {
 
   try {
     const response = await fetch(targetUrl, {
+      dispatcher: fetchDispatcher,
       headers: {
         "User-Agent": selectedUserAgent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Cookie": ""
+        "Cookie": domainCookies.get(hostname) || "",
+        "Sec-Fetch-Mode": "navigate"
       },
       signal: AbortSignal.timeout(10000) // 10s timeout
     });
 
     if (!response.ok) {
       throw new Error(`Target server responded with status ${response.status}`);
+    }
+
+    const setCookies = response.headers.get("set-cookie");
+    if (setCookies) {
+      domainCookies.set(hostname, setCookies);
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType && !contentType.includes("text/html")) {
+      res.set("Content-Type", contentType);
+      const arrayBuffer = await response.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
     }
 
     const html = await response.text();
@@ -1028,7 +1071,17 @@ app.get("/api/proxy", async (req, res) => {
       }
     };
 
-    // Rewrite Href
+    // Proxy resources strictly through the proxy server
+    const proxyUrlStr = (rel: string) => {
+      try {
+        const absolute = new URL(rel, targetUrl).href;
+        return `/api/proxy?url=${encodeURIComponent(absolute)}&userAgent=${userAgentKey}`;
+      } catch {
+        return rel;
+      }
+    };
+
+    // Rewrite Href - point to absolute URL so interceptor can catch it
     $("a").each((i, el) => {
       const href = $(el).attr("href");
       if (href) {
@@ -1036,17 +1089,17 @@ app.get("/api/proxy", async (req, res) => {
       }
     });
 
-    // Rewrite Image src & srcset
+    // Rewrite Image src & srcset - strictly tunnel via proxy
     $("img, picture source, iframe").each((i, el) => {
       const src = $(el).attr("src");
-      if (src) $(el).attr("src", resolveUrl(src));
+      if (src) $(el).attr("src", proxyUrlStr(src));
       const srcset = $(el).attr("srcset");
       if (srcset) {
         try {
           const rewrittenSrcset = srcset.split(",").map(part => {
             const parts = part.trim().split(/\s+/);
             if (parts[0]) {
-              parts[0] = resolveUrl(parts[0]);
+              parts[0] = proxyUrlStr(parts[0]);
             }
             return parts.join(" ");
           }).join(", ");
@@ -1061,7 +1114,7 @@ app.get("/api/proxy", async (req, res) => {
     $("link").each((i, el) => {
       const href = $(el).attr("href");
       if (href) {
-        $(el).attr("href", resolveUrl(href));
+        $(el).attr("href", proxyUrlStr(href));
       }
     });
 
@@ -1069,7 +1122,7 @@ app.get("/api/proxy", async (req, res) => {
     $("script").each((i, el) => {
       const src = $(el).attr("src");
       if (src) {
-        $(el).attr("src", resolveUrl(src));
+        $(el).attr("src", proxyUrlStr(src));
       }
     });
 
@@ -1417,6 +1470,15 @@ app.post("/api/analyze", async (req, res) => {
     targetUrl = "http://" + targetUrl;
   }
 
+  try {
+    const requestUrl = new URL(targetUrl);
+    if (isLocalNetwork(requestUrl.hostname)) {
+      return res.status(403).json({ error: "Forbidden local network access." });
+    }
+  } catch {
+    return res.status(400).json({ error: "Invalid target URL provided." });
+  }
+
   if (!bypassCache) {
     const cached = await cacheDb.getAnalyze(targetUrl);
     if (cached) {
@@ -1426,11 +1488,18 @@ app.post("/api/analyze", async (req, res) => {
 
   try {
     const fetchRes = await fetch(targetUrl, {
+      dispatcher: fetchDispatcher,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Cookie": domainCookies.get(new URL(targetUrl).hostname) || ""
       },
       signal: AbortSignal.timeout(8000)
     });
+    
+    const setCookies = fetchRes.headers.get("set-cookie");
+    if (setCookies) {
+      domainCookies.set(new URL(targetUrl).hostname, setCookies);
+    }
 
     const html = await fetchRes.text();
     const $ = cheerio.load(html);
@@ -1506,6 +1575,16 @@ app.post("/api/ai-emu", async (req, res) => {
   const { url, sampledText, metadata, reload, model = "gemini-3.5-flash" } = req.body;
   if (!url) {
     return res.status(400).json({ error: "Missing url parameter" });
+  }
+
+  let requestUrl;
+  try {
+    requestUrl = new URL(url);
+    if (isLocalNetwork(requestUrl.hostname)) {
+      return res.status(403).json({ error: "Forbidden local network access." });
+    }
+  } catch {
+    return res.status(400).json({ error: "Invalid focus URL provided." });
   }
 
   const bypassCache = reload === true;
@@ -1799,8 +1878,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
+  const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 
