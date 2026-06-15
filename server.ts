@@ -1868,18 +1868,22 @@ async function startServer() {
     if (process.env.NODE_ENV !== "production") {
       try {
         const vite = await createViteServer({
-          server: { middlewareMode: true },
+          server: {
+            middlewareMode: true,
+            // Disable Vite's own HMR WebSocket server — Express owns the port.
+            // This prevents the "Port 24678 is already in use" crash on restart.
+            hmr: { port: 0 },
+          },
           appType: "spa",
         });
         app.use(vite.middlewares);
       } catch (viteError) {
         console.warn("Vite initialization failed, using static fallback:", viteError);
-        // Fallback to serving from dist if Vite fails
         const distPath = path.join(process.cwd(), "dist");
         app.use(express.static(distPath));
-        app.get("*", (req, res) => {
-          res.sendFile(path.join(distPath, "index.html")).catch(() => {
-            res.status(500).send("Server error - Vite and dist unavailable");
+        app.get("*", (_req, res) => {
+          res.sendFile(path.join(distPath, "index.html"), (err) => {
+            if (err) res.status(500).send("Server error - Vite and dist unavailable");
           });
         });
       }
@@ -1893,19 +1897,38 @@ async function startServer() {
 
     const HOST = process.env.LISTEN_ALL === "true" || process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
 
-    await new Promise<void>((resolve, reject) => {
-      const server = app.listen(PORT, HOST, () => {
-        console.log(`Server running on http://${HOST}:${PORT}`);
-        resolve();
-      });
-      server.on("error", (err: NodeJS.ErrnoException) => {
-        reject(err);
-      });
-    });
+    await listenOnAvailablePort(app, PORT, HOST);
   } catch (err) {
     console.error("Fatal error during server initialization:", err);
     process.exit(1);
   }
+}
+
+function listenOnAvailablePort(
+  expressApp: express.Application,
+  port: number,
+  host: string,
+  attempt = 0
+): Promise<void> {
+  const MAX_ATTEMPTS = 10;
+  return new Promise<void>((resolve, reject) => {
+    const server = expressApp.listen(port, host, () => {
+      console.log(`Server running on http://${host}:${port}`);
+      resolve();
+    });
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE" && attempt < MAX_ATTEMPTS) {
+        const nextPort = port + 1;
+        console.warn(`Port ${port} in use, trying ${nextPort}...`);
+        server.close();
+        listenOnAvailablePort(expressApp, nextPort, host, attempt + 1)
+          .then(resolve)
+          .catch(reject);
+      } else {
+        reject(err);
+      }
+    });
+  });
 }
 
 startServer().catch(err => {

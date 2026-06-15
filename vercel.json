@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "framework": null,
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/dist/server.cjs"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/dist/server.cjs"
+    }
+  ]
+}
