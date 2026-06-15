@@ -1,6 +1,7 @@
 export enum BrowserMode {
   PROXY = "PROXY",
-  AI_EMULATION = "AI_EMULATION"
+  AI_EMULATION = "AI_EMULATION",
+  READABILITY = "READABILITY"
 }
 
 export type ViewportSize = "desktop" | "tablet" | "mobile";
@@ -56,4 +57,13 @@ export interface ViewportSnapshot {
   mode: BrowserMode;
   viewportSize: ViewportSize;
   imageData: string; // Base64 dataURL
+}
+
+export interface ReadabilityData {
+  title: string;
+  byline?: string;
+  content: string; // HTML clean format content
+  wordCount: number;
+  readingTime: string;
+  sourceUrl: string;
 }

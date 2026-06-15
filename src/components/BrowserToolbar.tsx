@@ -11,7 +11,10 @@ import {
   Sparkles, 
   ChevronDown,
   Bookmark,
-  Search
+  Search,
+  BookOpen,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import { BrowserMode, ViewportSize } from "../types";
 
@@ -31,6 +34,10 @@ interface BrowserToolbarProps {
   isLoading: boolean;
   onAddBookmark: () => void;
   isBookmarked: boolean;
+  selectedModel: string;
+  onModelChange: (model: string) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 }
 
 export default function BrowserToolbar({
@@ -48,7 +55,11 @@ export default function BrowserToolbar({
   onViewportChange,
   isLoading,
   onAddBookmark,
-  isBookmarked
+  isBookmarked,
+  selectedModel,
+  onModelChange,
+  isFullscreen,
+  onToggleFullscreen
 }: BrowserToolbarProps) {
   const [inputUrl, setInputUrl] = useState(currentUrl);
 
@@ -161,6 +172,18 @@ export default function BrowserToolbar({
           >
             <Smartphone className="w-4 h-4" />
           </button>
+          <div className="h-4 w-[1px] bg-slate-700 mx-0.5" />
+          <button
+            onClick={onToggleFullscreen}
+            className={`p-1.5 rounded-md transition-all ${
+              isFullscreen
+                ? "bg-amber-500 text-slate-950 font-medium scale-105 animate-pulse"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+            }`}
+            title={isFullscreen ? "Minimize Reader view" : "Maximize Full Screen Reader"}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
@@ -207,6 +230,15 @@ export default function BrowserToolbar({
 
       {/* Emulation Engine Modes */}
       <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-1 rounded-xl w-full md:w-auto justify-center">
+        <select 
+             value={selectedModel}
+             onChange={(e) => onModelChange(e.target.value)}
+             className="bg-slate-900 text-slate-300 text-[10px] py-1 px-1.5 rounded-lg border border-slate-700 outline-none hover:border-slate-600 cursor-pointer"
+           >
+             <option value="gemini-3.1-flash-lite">Gemini 3.1 flash lite</option>
+             <option value="gemini-2.5-flash">Gemini 2.5 flash</option>
+             <option value="gemini-3.5-flash">Gemini 3.5 flash</option>
+        </select>
         <button
           onClick={() => onModeChange(BrowserMode.PROXY)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -229,6 +261,19 @@ export default function BrowserToolbar({
         >
           <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
           AI Emulation
+        </button>
+
+        <button
+          onClick={() => onModeChange(BrowserMode.READABILITY)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            mode === BrowserMode.READABILITY
+              ? "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 border border-purple-500/30 shadow-md"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          title="Readability Mode (distraction-free clean reading view)"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-purple-400" />
+          Readability
         </button>
       </div>
     </div>

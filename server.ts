@@ -256,7 +256,7 @@ export function generateGoogleHomepage(): string {
   `;
 }
 
-async function fetchGeminiSearchResults(query: string) {
+async function fetchGeminiSearchResults(model: string, query: string) {
   const ai = getAiClient();
   const prompt = `
     You are a realistic Google Search scraper assistant.
@@ -300,7 +300,7 @@ async function fetchGeminiSearchResults(query: string) {
     }
 
     const rawResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: model,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -416,8 +416,8 @@ async function fetchGeminiSearchResults(query: string) {
   }
 }
 
-async function generateGoogleSearchResultsPage(query: string): Promise<string> {
-  const data = await fetchGeminiSearchResults(query);
+async function generateGoogleSearchResultsPage(model: string, query: string): Promise<string> {
+  const data = await fetchGeminiSearchResults(model, query);
   
   const searchBarValue = query.replace(/"/g, '&quot;');
   
@@ -931,6 +931,22 @@ app.get("/api/proxy", async (req, res) => {
   let targetUrl = urlParam;
   const bypassCache = req.query.reload === "true";
 
+  // Dynamic privacy shield configurations from client
+  const shieldCanvas = req.query.shieldCanvas !== "false";
+  const shieldWebRTC = req.query.shieldWebRTC !== "false";
+  const shieldAudio = req.query.shieldAudio !== "false";
+  const shieldWebdriver = req.query.shieldWebdriver !== "false";
+  const userAgentKey = (req.query.userAgent as string) || "chrome-windows";
+
+  const UA_MAP: Record<string, string> = {
+    "chrome-windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "safari-mac": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+    "firefox-linux": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "edge-windows": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+  };
+
+  const selectedUserAgent = UA_MAP[userAgentKey] || UA_MAP["chrome-windows"];
+
   // Handle universal Google Interception (search + homepage) case-insensitively
   const googleData = parseGoogleUrl(targetUrl);
   if (googleData.isGoogle) {
@@ -945,7 +961,8 @@ app.get("/api/proxy", async (req, res) => {
           }
         }
 
-        const searchResultsHtml = await generateGoogleSearchResultsPage(googleData.query);
+        const modelParam = (req.query.model as string) || "gemini-3.5-flash";
+        const searchResultsHtml = await generateGoogleSearchResultsPage(modelParam, googleData.query);
         await cacheDb.setProxy(targetUrl, searchResultsHtml);
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.setHeader("X-Cache", "MISS");
@@ -987,7 +1004,7 @@ app.get("/api/proxy", async (req, res) => {
   try {
     const response = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": selectedUserAgent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Cookie": ""
@@ -1057,9 +1074,149 @@ app.get("/api/proxy", async (req, res) => {
     });
 
     // Inject Interceptor Script before body loads
-    const interceptorScript = `
+    let interceptorScript = `
       <script>
         (function() {
+    `;
+
+    if (shieldCanvas) {
+      interceptorScript += `
+          // 1. HTML5 Canvas Anti-Fingerprinting Setup
+          try {
+            if (!window.__canvas_noise_active__) {
+              window.__canvas_noise_active__ = true;
+
+              const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+              const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+              const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+
+              CanvasRenderingContext2D.prototype.getImageData = function(x, y, width, height) {
+                const result = originalGetImageData.apply(this, arguments);
+                const data = result.data;
+                // Add extremely subtle LSB noise to active (not fully transparent) pixels
+                for (let i = 0; i < data.length; i += 4) {
+                  if (data[i + 3] > 0) {
+                    const noiseR = Math.random() > 0.5 ? 1 : -1;
+                    const noiseG = Math.random() > 0.5 ? 1 : -1;
+                    const noiseB = Math.random() > 0.5 ? 1 : -1;
+
+                    data[i] = Math.max(0, Math.min(255, data[i] + noiseR));
+                    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noiseG));
+                    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noiseB));
+                  }
+                }
+                return result;
+              };
+
+              HTMLCanvasElement.prototype.toDataURL = function() {
+                const width = this.width;
+                const height = this.height;
+                if (width === 0 || height === 0) {
+                  return originalToDataURL.apply(this, arguments);
+                }
+                try {
+                  const tempCanvas = document.createElement('canvas');
+                  tempCanvas.width = width;
+                  tempCanvas.height = height;
+                  const tempCtx = tempCanvas.getContext('2d');
+                  if (tempCtx) {
+                    tempCtx.drawImage(this, 0, 0);
+                    const imgData = tempCtx.getImageData(0, 0, width, height);
+                    tempCtx.putImageData(imgData, 0, 0);
+                    return originalToDataURL.apply(tempCanvas, arguments);
+                  }
+                } catch (e) {}
+                return originalToDataURL.apply(this, arguments);
+              };
+
+              HTMLCanvasElement.prototype.toBlob = function() {
+                const width = this.width;
+                const height = this.height;
+                if (width === 0 || height === 0) {
+                  return originalToBlob.apply(this, arguments);
+                }
+                try {
+                  const tempCanvas = document.createElement('canvas');
+                  tempCanvas.width = width;
+                  tempCanvas.height = height;
+                  const tempCtx = tempCanvas.getContext('2d');
+                  if (tempCtx) {
+                    tempCtx.drawImage(this, 0, 0);
+                    const imgData = tempCtx.getImageData(0, 0, width, height);
+                    tempCtx.putImageData(imgData, 0, 0);
+                    return originalToBlob.apply(tempCanvas, arguments);
+                  }
+                } catch (e) {}
+                return originalToBlob.apply(this, arguments);
+              };
+            }
+          } catch (e) {
+            console.warn("[Stealth Option] Canvas noise injection failed:", e);
+          }
+      `;
+    }
+
+    if (shieldWebRTC) {
+      interceptorScript += `
+          // 2. Disable WebRTC to block local and public IP leakage bypassing proxy
+          try {
+            window.RTCPeerConnection = undefined;
+            window.webkitRTCPeerConnection = undefined;
+            Object.defineProperty(window, 'RTCPeerConnection', { value: undefined, configurable: false, writable: false });
+            Object.defineProperty(window, 'webkitRTCPeerConnection', { value: undefined, configurable: false, writable: false });
+          } catch (e) {}
+      `;
+    }
+
+    if (shieldAudio) {
+      interceptorScript += `
+          // 3. Web Audio API Anti-Fingerprinting Jitter
+          try {
+            if (window.AudioBuffer) {
+              const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+              AudioBuffer.prototype.getChannelData = function(channel) {
+                const data = originalGetChannelData.apply(this, arguments);
+                for (let i = 0; i < data.length; i += 100) {
+                  data[i] += (Math.random() - 0.5) * 1e-7;
+                }
+                return data;
+              };
+            }
+            if (window.AnalyserNode) {
+              const originalGetByteFrequencyData = AnalyserNode.prototype.getByteFrequencyData;
+              AnalyserNode.prototype.getByteFrequencyData = function(array) {
+                originalGetByteFrequencyData.apply(this, arguments);
+                for (let i = 0; i < array.length; i++) {
+                  if (array[i] > 0) {
+                    array[i] = Math.max(0, Math.min(255, array[i] + (Math.random() > 0.5 ? 1 : -1)));
+                  }
+                }
+              };
+            }
+          } catch (e) {}
+      `;
+    }
+
+    if (shieldWebdriver) {
+      interceptorScript += `
+          // 4. Overriding Webdriver & Normalizing Common Fingerprints
+          try {
+            Object.defineProperty(navigator, 'webdriver', {
+              get: () => false,
+              configurable: true
+            });
+            const standardScreen = { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelDepth: 24 };
+            for (const prop in standardScreen) {
+              Object.defineProperty(Screen.prototype, prop, {
+                get: () => standardScreen[prop],
+                configurable: true
+              });
+            }
+          } catch (e) {}
+      `;
+    }
+
+    interceptorScript += `
           // Monitor link clicks
           document.addEventListener('click', function(e) {
             const a = e.target.closest('a');
@@ -1346,7 +1503,7 @@ app.post("/api/analyze", async (req, res) => {
 
 // 3. AI High-Fidelity webpage Emulation using Gemini
 app.post("/api/ai-emu", async (req, res) => {
-  const { url, sampledText, metadata, reload } = req.body;
+  const { url, sampledText, metadata, reload, model = "gemini-3.5-flash" } = req.body;
   if (!url) {
     return res.status(400).json({ error: "Missing url parameter" });
   }
@@ -1370,7 +1527,7 @@ app.post("/api/ai-emu", async (req, res) => {
             brandDescription: "Classic Google minimal layout optimized for rapid indexing and high readability standards.",
             extractedBrandColors: ["#4285F4", "#EA4335", "#FBBC05", "#34A853"],
             designReview: "Constructed an authentic response matrix matching modern search patterns, complete with a sticky header toolbar, query parameters, people-also-ask accordions, organic link items, and a side panel card.",
-            reconstructedCode: await generateGoogleSearchResultsPage(googleData.query)
+            reconstructedCode: await generateGoogleSearchResultsPage(model, googleData.query)
           }
         : {
             siteTitle: "Google",
@@ -1429,7 +1586,7 @@ app.post("/api/ai-emu", async (req, res) => {
 
   try {
     const rawResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: model,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1483,6 +1640,117 @@ app.post("/api/ai-emu", async (req, res) => {
         `
       }
     });
+  }
+});
+
+// 3.5. Readability extraction using Gemini and Cheerio pre-cleaning
+app.post("/api/readability", async (req, res) => {
+  const { url, model = "gemini-3.5-flash" } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: "Missing url parameter" });
+  }
+
+  let targetUrl = url;
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = "http://" + targetUrl;
+  }
+
+  const cacheKey = "readability:" + targetUrl;
+  try {
+    const cached = await cacheDb.getAiEmu(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+  } catch (e) {
+    console.warn("Readability cache read failed:", e);
+  }
+
+  try {
+    const fetchRes = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+
+    const html = await fetchRes.text();
+    const $ = cheerio.load(html);
+
+    // Initial clean targeting common noise tags
+    $("script, style, iframe, noscript, svg, footer, header, nav, aside, .ads, .sidebar, #comments, .comments, .menu").remove();
+
+    const pageTitle = $("title").text().trim() || $("h1").first().text().trim() || new URL(targetUrl).hostname;
+    
+    // Grab main text block sample for Gemini text extraction
+    const rawParagraphs: string[] = [];
+    $("p, article, section, h1, h2, h3, h4, li").each((i, el) => {
+      const text = $(el).text().trim();
+      if (text && text.length > 20) {
+        rawParagraphs.push(text);
+      }
+    });
+
+    const bodySampleText = rawParagraphs.join("\n\n").slice(0, 10000) || $("body").text().replace(/\s+/g, " ").trim().slice(0, 5000);
+
+    const prompt = `
+      You are an expert Article Readability Purifier.
+      Analyze the scraped text content below from the website URL: ${targetUrl}.
+      
+      Tasks:
+      1. Sift through the content to identify the main article title, author (or publication source byline), and the central reading body.
+      2. Reconstruct ONLY the core article body text into clean, accessible, high-contrast typography HTML format using standard tags like:
+         <p>, <h2>, <h3>, <ul>, <ol>, <strong>, <em>, <blockquote>.
+      3. CRITICAL: Do NOT include any navigation headers, sidebars, social sharing panels, footer menus, newsletters, ads, comment sections, or general header bar widgets. It should feel like a premium, clean book page view or a high-contrast Instapaper/Pocket article.
+      4. Compute a reliable word count and estimate the reading time (use ~200 words per minute).
+      
+      Text Data Sample:
+      ${bodySampleText}
+
+      Return your response STRICTLY as a valid JSON object matching this schema structure:
+      {
+        "title": "Determined Core Article Title",
+        "byline": "Determined Author/Publisher Byline (or null)",
+        "content": "<p>Main paragraph content here...</p><h2>Subheading</h2><p>Additional paragraph...</p>",
+        "wordCount": 1150,
+        "readingTime": "6 min read",
+        "sourceUrl": "${targetUrl}"
+      }
+      
+      Note: Return ONLY raw JSON, with no markdown code block wrapped around the JSON (no wrap like \`\`\`json).
+    `;
+
+    const ai = getAiClient();
+    const rawResponse = await ai.models.generateContent({
+      model: model,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    const responseText = rawResponse.text;
+    const readabilityResult = JSON.parse(responseText || "{}");
+
+    await cacheDb.setAiEmu(cacheKey, readabilityResult);
+    return res.json(readabilityResult);
+
+  } catch (error: any) {
+    console.error("Readability generation failed:", error);
+    // Simple heuristic fallback if Gemini fails or fetch blocks
+    const fallbackTitle = new URL(targetUrl).hostname;
+    const fallbackResult = {
+      title: fallbackTitle,
+      byline: "Web Scraper Fallback",
+      content: `
+        <p class="text-amber-500 font-semibold font-mono">Notice: We couldn't perform full AI Readability cleanup on this host due to server restrictions or timeout.</p>
+        <p>The system was able to connect but could not safely structure the content with high-accuracy. Try reloading or selecting a larger Gemini model in the toolbar.</p>
+        <p>Target URL: <a href="${targetUrl}" class="text-cyan-500 underline" target="_blank">${targetUrl}</a></p>
+      `,
+      wordCount: 100,
+      readingTime: "1 min read",
+      sourceUrl: targetUrl
+    };
+    return res.json(fallbackResult);
   }
 });
 

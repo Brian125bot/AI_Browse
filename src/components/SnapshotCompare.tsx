@@ -72,7 +72,7 @@ export default function SnapshotCompare({
 
         {/* View togglers */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 bg-slate-950 border border-slate-850 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl">
             <button
               onClick={() => setCompareMode("side-by-side")}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -116,7 +116,7 @@ export default function SnapshotCompare({
             <select
               value={leftId}
               onChange={(e) => setLeftId(e.target.value)}
-              className="bg-slate-950 border border-slate-755 text-slate-200 rounded-lg py-2 px-3 text-xs focus:outline-none focus:border-cyan-500 flex-1"
+              className="bg-slate-950 border border-slate-800 text-slate-200 rounded-lg py-2 px-3 text-xs focus:outline-none focus:border-cyan-500 flex-1"
             >
               {snapshots.map(s => (
                 <option key={s.id} value={s.id}>
@@ -143,7 +143,7 @@ export default function SnapshotCompare({
             <select
               value={rightId}
               onChange={(e) => setRightId(e.target.value)}
-              className="bg-slate-950 border border-slate-755 text-slate-200 rounded-lg py-2 px-3 text-xs focus:outline-none focus:border-cyan-500 flex-1"
+              className="bg-slate-950 border border-slate-800 text-slate-200 rounded-lg py-2 px-3 text-xs focus:outline-none focus:border-cyan-500 flex-1"
             >
               {snapshots.map(s => (
                 <option key={s.id} value={s.id}>
@@ -172,7 +172,7 @@ export default function SnapshotCompare({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-6xl">
               {/* Left Screen card */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
-                <div className="bg-slate-950 px-4 py-2 border-b border-slate-850 flex justify-between items-center text-xs font-mono text-slate-400">
+                <div className="bg-slate-905 px-4 py-2 border-b border-slate-800 flex justify-between items-center text-xs font-mono text-slate-400">
                   <span className="font-semibold text-cyan-400 flex items-center gap-1">
                     {leftSnapshot.mode === "AI_EMULATION" ? <Sparkles className="w-3.5 h-3.5 text-purple-400" /> : <Globe className="w-3.5 h-3.5" />}
                     VERSION A
@@ -181,7 +181,7 @@ export default function SnapshotCompare({
                     {leftSnapshot.viewportSize.toUpperCase()}
                   </span>
                 </div>
-                <div className="p-4 border-b border-slate-850/60 bg-slate-900/60 space-y-1">
+                <div className="p-4 border-b border-slate-800/60 bg-slate-900/60 space-y-1">
                   <h4 className="text-sm font-bold text-slate-200 truncate">{leftSnapshot.title}</h4>
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
                     <span className="truncate flex-1 hover:text-cyan-400">{leftSnapshot.url}</span>
@@ -202,7 +202,7 @@ export default function SnapshotCompare({
 
               {/* Right Screen card */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
-                <div className="bg-slate-950 px-4 py-2 border-b border-slate-850 flex justify-between items-center text-xs font-mono text-slate-400">
+                <div className="bg-slate-905 px-4 py-2 border-b border-slate-800 flex justify-between items-center text-xs font-mono text-slate-400">
                   <span className="font-semibold text-cyan-400 flex items-center gap-1">
                     {rightSnapshot.mode === "AI_EMULATION" ? <Sparkles className="w-3.5 h-3.5 text-purple-400" /> : <Globe className="w-3.5 h-3.5" />}
                     VERSION B
@@ -211,7 +211,7 @@ export default function SnapshotCompare({
                     {rightSnapshot.viewportSize.toUpperCase()}
                   </span>
                 </div>
-                <div className="p-4 border-b border-slate-850/60 bg-slate-900/60 space-y-1">
+                <div className="p-4 border-b border-slate-800/60 bg-slate-900/60 space-y-1">
                   <h4 className="text-sm font-bold text-slate-200 truncate">{rightSnapshot.title}</h4>
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
                     <span className="truncate flex-1 hover:text-cyan-400">{rightSnapshot.url}</span>
@@ -296,7 +296,7 @@ export default function SnapshotCompare({
                   className="flex-1 h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
                 <span className="text-xs font-mono font-bold text-pink-400">B</span>
-                <span className="text-xs font-mono text-slate-500 bg-slate-950/55 border border-slate-850 px-2 py-0.5 rounded">
+                <span className="text-xs font-mono text-slate-500 bg-slate-950/55 border border-slate-800 px-2 py-0.5 rounded">
                   {sliderPosition}%
                 </span>
               </div>
