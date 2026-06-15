@@ -1,0 +1,6 @@
+{
+  "name": "Remote Browser Emulator",
+  "description": "Browser emulation engine that fetches remote web pages, rewrites relative links, and renders high-fidelity real-time previews alongside AI-powered mockup reconstructions and structural analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
