@@ -15,7 +15,7 @@ export interface DatabaseSchema {
 
 const DB_FILE = path.join(process.cwd(), "cache-db.json");
 
-class SimpleDB {
+export class SimpleDB {
   private data: DatabaseSchema = { proxy: {}, analyze: {}, aiEmu: {} };
   private initialized = false;
   private writePromise: Promise<void> = Promise.resolve();
@@ -74,8 +74,8 @@ class SimpleDB {
   }
 
   private async save() {
-    if (this.isEphemeral) return;
     this.enforceLimits();
+    if (this.isEphemeral) return;
     this.writePromise = this.writePromise.then(async () => {
       try {
         await fs.writeFile(DB_FILE, JSON.stringify(this.data, null, 2), "utf-8");
@@ -88,6 +88,7 @@ class SimpleDB {
 
   async getProxy(url: string): Promise<string | null> {
     await this.init();
+    this.enforceLimits();
     const entry = this.data.proxy[url];
     if (entry) return entry.data;
     return null;
@@ -105,6 +106,7 @@ class SimpleDB {
 
   async getAnalyze(url: string): Promise<any | null> {
     await this.init();
+    this.enforceLimits();
     const entry = this.data.analyze[url];
     if (entry) return entry.data;
     return null;
@@ -122,6 +124,7 @@ class SimpleDB {
 
   async getAiEmu(url: string): Promise<any | null> {
     await this.init();
+    this.enforceLimits();
     const entry = this.data.aiEmu[url];
     if (entry) return entry.data;
     return null;
